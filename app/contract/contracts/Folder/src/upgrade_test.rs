@@ -23,6 +23,8 @@
 //! cargo test upgrade_safety_gate_ -- --nocapture
 //! ```
 
+
+
 use crate::{
     errors:: RustAcademyError,
     storage::{CURRENT_CONTRACT_VERSION, LEGACY_CONTRACT_VERSION, PRIVACY_ENABLED_KEY},
@@ -650,6 +652,7 @@ fn upgrade_harness_all_lifecycle_statuses_are_distinct_post_migration() {
 /// Required because admin-gated functions (set_upgrade_window, start_upgrade,
 /// complete_upgrade) use require_admin which checks the role; the role is not
 /// automatically accessible after a WASM upgrade until migrate seeds it.
+
 fn seed_admin_role<'a>(
     env: &'a Env,
     contract_id: &Address,
@@ -664,9 +667,10 @@ fn seed_admin_role<'a>(
 fn upgrade_safety_gate_blocks_upgrade_outside_window() {
     let (env, gs) = build_golden_state();
     let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
+    let dummy_hash = BytesN::from_array(&env, &[0; 32]);
 
     // Window not set → upgrades blocked.
-    let result = client.try_start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    let result = client.try_start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
     assert!(
         result.is_err(),
         "start_upgrade must fail when no window is set"
@@ -676,7 +680,7 @@ fn upgrade_safety_gate_blocks_upgrade_outside_window() {
     let now = env.ledger().timestamp();
     client.set_upgrade_window(&gs.admin, &(now + 1000), &(now + 2000));
 
-    let result = client.try_start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    let result = client.try_start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
     assert!(
         result.is_err(),
         "start_upgrade must fail when current time is before window start"
@@ -687,7 +691,10 @@ fn upgrade_safety_gate_blocks_upgrade_outside_window() {
         li.timestamp = now + 1500;
     });
 
-    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
+
+    // Perform actual upgrade()
+    client.upgrade(&gs.admin, &dummy_hash);
 
     // complete_upgrade internally calls migrate and finalizes the upgrade.
     client.complete_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
@@ -697,7 +704,7 @@ fn upgrade_safety_gate_blocks_upgrade_outside_window() {
         li.timestamp = now + 2500;
     });
 
-    let result = client.try_start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    let result = client.try_start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
     assert!(
         result.is_err(),
         "start_upgrade must fail when current time is after window end"
@@ -708,12 +715,16 @@ fn upgrade_safety_gate_blocks_upgrade_outside_window() {
 fn upgrade_safety_gate_post_upgrade_invariants_enforced() {
     let (env, gs) = build_golden_state();
     let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
+    let dummy_hash = BytesN::from_array(&env, &[0; 32]);
 
     // Set a valid window: start=1 (before current timestamp 200), end=0 (no upper bound).
     client.set_upgrade_window(&gs.admin, &1u64, &0u64);
 
     // Attempt a normal upgrade: should validate invariants post-migrate.
-    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
+
+    // Perform actual upgrade() instead of manually setting storage
+    client.upgrade(&gs.admin, &dummy_hash);
 
     // complete_upgrade internally calls migrate and finalizes the upgrade.
     let version = client.complete_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
@@ -733,22 +744,26 @@ fn upgrade_safety_gate_post_upgrade_invariants_enforced() {
 fn upgrade_safety_gate_invariant_failure_deterministic() {
     let (env, gs) = build_golden_state();
     let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
+    let dummy_hash = BytesN::from_array(&env, &[0; 32]);
 
     // Set valid window and start upgrade.
     client.set_upgrade_window(&gs.admin, &1u64, &0u64);
-    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
+
+    // Perform actual upgrade()
+    client.upgrade(&gs.admin, &dummy_hash);
 
     // Deliberately corrupt fee config to violate invariant (fee_bps > 10_000).
     env.as_contract(&gs.contract_id, || {
         crate::storage::set_fee_config(&env, &FeeConfig { fee_bps: 99999 });
     });
 
-    // migrate must fail deterministically when invariants are violated (AC2).
-    let result = client.try_migrate(&gs.admin);
+    // complete_upgrade must fail deterministically when invariants are violated (AC2).
+    let result = client.try_complete_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
     assert_eq!(
         result,
         Err(Ok( RustAcademyError::InternalError)),
-        "migrate must fail with InternalError when invariants are violated"
+        "complete_upgrade must fail with InternalError when invariants are violated"
     );
 
     // Restore fee config and complete the upgrade cleanly.
@@ -763,6 +778,7 @@ fn upgrade_safety_gate_invariant_failure_deterministic() {
 fn upgrade_safety_gate_emits_events() {
     let (env, gs) = build_golden_state();
     let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
+    let dummy_hash = BytesN::from_array(&env, &[0; 32]);
 
     // Set a valid window.
     client.set_upgrade_window(&gs.admin, &1u64, &0u64);
@@ -771,7 +787,10 @@ fn upgrade_safety_gate_emits_events() {
     let events_before = env.events().all().len();
 
     // Start upgrade → should emit UpgradeStarted event.
-    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
+
+    // Perform actual upgrade()
+    client.upgrade(&gs.admin, &dummy_hash);
 
     // Complete upgrade → internally calls migrate and emits UpgradeCompleted event.
     client.complete_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
@@ -788,24 +807,28 @@ fn upgrade_safety_gate_emits_events() {
 fn upgrade_safety_gate_blocks_double_start() {
     let (env, gs) = build_golden_state();
     let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
+    let dummy_hash = BytesN::from_array(&env, &[0; 32]);
 
     client.set_upgrade_window(&gs.admin, &1u64, &0u64);
 
     // First start succeeds.
-    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
 
     // Second start (without complete_upgrade) fails → upgrade already in progress.
-    let result = client.try_start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    let result = client.try_start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
     assert!(
         result.is_err(),
         "start_upgrade must fail when upgrade already in progress"
     );
 
+    // Perform actual upgrade()
+    client.upgrade(&gs.admin, &dummy_hash);
+
     // Clean up by completing the upgrade (internally calls migrate).
     client.complete_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
 
     // Now a new start is allowed.
-    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION);
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
 }
 
 #[test]
@@ -813,14 +836,95 @@ fn upgrade_safety_gate_non_admin_blocked() {
     let (env, gs) = build_golden_state();
     let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
     let non_admin = Address::generate(&env);
+    let dummy_hash = BytesN::from_array(&env, &[0; 32]);
 
     client.set_upgrade_window(&gs.admin, &1u64, &0u64);
 
     // Non-admin attempts start_upgrade → fails.
-    let result = client.try_start_upgrade(&non_admin, &CURRENT_CONTRACT_VERSION);
+    let result = client.try_start_upgrade(&non_admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
     assert!(result.is_err(), "start_upgrade by non-admin must fail");
 
     // Non-admin attempts set_upgrade_window → fails.
     let result = client.try_set_upgrade_window(&non_admin, &1u64, &0u64);
     assert!(result.is_err(), "set_upgrade_window by non-admin must fail");
+}
+
+#[test]
+fn upgrade_safety_gate_blocks_direct_upgrade_without_start() {
+    let (env, gs) = build_golden_state();
+    let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
+    let dummy_hash = BytesN::from_array(&env, &[0; 32]);
+
+    client.set_upgrade_window(&gs.admin, &1u64, &0u64);
+
+    // Attempt direct upgrade() without start_upgrade() → fails.
+    let result = client.try_upgrade(&gs.admin, &dummy_hash);
+    assert!(
+        result.is_err(),
+        "direct upgrade() without start_upgrade() must fail"
+    );
+}
+
+#[test]
+fn upgrade_safety_gate_blocks_upgrade_with_wrong_hash() {
+    let (env, gs) = build_golden_state();
+    let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
+    let correct_hash = BytesN::from_array(&env, &[1; 32]);
+    let wrong_hash = BytesN::from_array(&env, &[2; 32]);
+
+    client.set_upgrade_window(&gs.admin, &1u64, &0u64);
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &correct_hash);
+
+    // Attempt upgrade() with wrong hash → fails.
+    let result = client.try_upgrade(&gs.admin, &wrong_hash);
+    assert!(
+        result.is_err(),
+        "upgrade() with wrong hash must fail"
+    );
+
+    // Correct hash succeeds.
+    client.upgrade(&gs.admin, &correct_hash);
+}
+
+#[test]
+fn upgrade_safety_gate_cancel_flow() {
+    let (env, gs) = build_golden_state();
+    let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
+    let dummy_hash = BytesN::from_array(&env, &[0; 32]);
+
+    client.set_upgrade_window(&gs.admin, &1u64, &0u64);
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
+
+    // Cancel upgrade.
+    client.cancel_upgrade(&gs.admin);
+
+    // Now upgrade() fails.
+    let result = client.try_upgrade(&gs.admin, &dummy_hash);
+    assert!(
+        result.is_err(),
+        "upgrade() after cancel_upgrade() must fail"
+    );
+
+    // start_upgrade is allowed again.
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
+}
+
+#[test]
+fn upgrade_safety_gate_complete_upgrade_verifies_version() {
+    let (env, gs) = build_golden_state();
+    let client = seed_admin_role(&env, &gs.contract_id, &gs.admin);
+    let dummy_hash = BytesN::from_array(&env, &[0; 32]);
+
+    client.set_upgrade_window(&gs.admin, &1u64, &0u64);
+    client.start_upgrade(&gs.admin, &CURRENT_CONTRACT_VERSION, &dummy_hash);
+
+    // upgrade() must be called
+    client.upgrade(&gs.admin, &dummy_hash);
+
+    // Attempt complete_upgrade with wrong version → fails.
+    let result = client.try_complete_upgrade(&gs.admin, &(CURRENT_CONTRACT_VERSION + 1));
+    assert!(
+        result.is_err(),
+        "complete_upgrade with wrong version must fail"
+    );
 }
