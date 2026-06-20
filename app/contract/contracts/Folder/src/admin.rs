@@ -273,6 +273,11 @@ pub fn start_upgrade(
 
     let old_version = get_version(env);
     let (window_start, window_end) = storage::get_upgrade_window(env);
+    if let Some(current_hash) = storage::get_wasm_hash(env) {
+        storage::set_pending_upgrade_rollback_wasm_hash(env, &current_hash);
+    } else {
+        storage::clear_pending_upgrade_rollback_wasm_hash(env);
+    }
 
     storage::set_upgrade_in_progress(env, true);
     storage::set_pending_upgrade_version(env, new_version);
@@ -332,6 +337,13 @@ pub fn upgrade(
 /// Cancel a pending upgrade and clear gating state (**Admin only**).
 pub fn cancel_upgrade(env: &Env, caller: &Address) -> Result<(),  RustAcademyError> {
     require_admin(env, caller)?;
+    if let Some(rollback_hash) = storage::get_pending_upgrade_rollback_wasm_hash(env) {
+        storage::set_wasm_hash(env, &rollback_hash);
+
+        #[cfg(not(test))]
+        env.deployer()
+            .update_current_contract_wasm(rollback_hash.clone());
+    }
     storage::clear_pending_upgrade(env);
     Ok(())
 }

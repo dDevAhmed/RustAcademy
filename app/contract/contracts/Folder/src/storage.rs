@@ -145,6 +145,8 @@ pub enum DataKey {
     UpgradeWindowEnd,
     /// Flag indicating an upgrade is in progress (between start_upgrade and complete_upgrade).
     UpgradeInProgress,
+    /// Snapshot of the pre-upgrade WASM hash used for recovery/cancel flows.
+    PendingUpgradeRollbackWasmHash,
     /// Pending WASM hash stored during start_upgrade.
     PendingUpgradeWasmHash,
     /// Pending contract version stored during start_upgrade.
@@ -273,11 +275,32 @@ pub fn set_pending_upgrade_wasm_hash(env: &Env, hash: &BytesN<32>) {
         .set(&DataKey::PendingUpgradeWasmHash, hash);
 }
 
+/// Set the pre-upgrade WASM hash used for rollback/recovery.
+pub fn set_pending_upgrade_rollback_wasm_hash(env: &Env, hash: &BytesN<32>) {
+    env.storage()
+        .persistent()
+        .set(&DataKey::PendingUpgradeRollbackWasmHash, hash);
+}
+
 /// Get pending upgrade WASM hash.
 pub fn get_pending_upgrade_wasm_hash(env: &Env) -> Option<BytesN<32>> {
     env.storage()
         .persistent()
         .get(&DataKey::PendingUpgradeWasmHash)
+}
+
+/// Get the pre-upgrade WASM hash used for rollback/recovery.
+pub fn get_pending_upgrade_rollback_wasm_hash(env: &Env) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&DataKey::PendingUpgradeRollbackWasmHash)
+}
+
+/// Clear the pre-upgrade WASM hash used for rollback/recovery.
+pub fn clear_pending_upgrade_rollback_wasm_hash(env: &Env) {
+    env.storage()
+        .persistent()
+        .remove(&DataKey::PendingUpgradeRollbackWasmHash);
 }
 
 /// Set pending upgrade version.
@@ -299,6 +322,9 @@ pub fn clear_pending_upgrade(env: &Env) {
     env.storage()
         .persistent()
         .remove(&DataKey::UpgradeInProgress);
+    env.storage()
+        .persistent()
+        .remove(&DataKey::PendingUpgradeRollbackWasmHash);
     env.storage()
         .persistent()
         .remove(&DataKey::PendingUpgradeWasmHash);
