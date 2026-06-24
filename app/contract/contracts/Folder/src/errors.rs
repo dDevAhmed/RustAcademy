@@ -70,6 +70,12 @@ pub enum RustAcademyError {
     DuplicateArbiter = 327,
     /// The arbiters list exceeds the maximum allowed count.
     TooManyArbiters = 328,
+    /// The request payload exceeds the supported bounded size for predictable execution.
+    PayloadTooLarge = 329,
+    /// The operation would fan out to more fee recipients than the supported limit.
+    TooManyFeeRecipients = 330,
+    /// The operation references more token transfer paths than the supported limit.
+    TooManyTokens = 331,
     /// The configured fee split exceeds the available fee budget.
     FeeSplitExceedsTotal = 323,
     /// Dispute resolution timeout has not yet elapsed.

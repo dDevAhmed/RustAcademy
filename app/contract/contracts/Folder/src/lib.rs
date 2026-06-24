@@ -50,9 +50,10 @@ mod upgrade_test;
 use errors::RustAcademyError;
 use storage::*;
 use types::{
-    ContractHealth, DeploymentMetadata, DisputeExpiryAction, EscrowEntry, EscrowStatus,
-    FeatureFlags, FeeConfig, OracleFeeConfig, PerAssetFeeConfig, PrivacyAwareEscrowView, Role,
-    SchemaCompatibility, StealthDepositParams, SupportedVersions, UpgradeState,
+    ContractHealth, DeploymentMetadata, DisputeExpiryAction, EscrowEntry,
+    EscrowOperationEstimate, EscrowOperationLimits, EscrowStatus, FeatureFlags, FeeConfig,
+    OracleFeeConfig, PerAssetFeeConfig, PrivacyAwareEscrowView, Role, SchemaCompatibility,
+    StealthDepositParams, SupportedVersions, UpgradeState,
 };
 
 pub use types::FeeRatio;
@@ -72,6 +73,21 @@ pub use types::FeeRatio;
 ///
 /// The contract uses Soroban's standardized token interface which works uniformly across
 /// all asset types. No special wrap/unwrap logic is required from users.
+///
+/// ## Supported Escrow Limits
+///
+/// The contract publishes bounded escrow limits through
+/// [`RustAcademyContract::get_escrow_operation_limits`]. The current supported
+/// envelopes are:
+/// - deposit token transfers: 1
+/// - deposit arbiters: up to 10
+/// - deposit fee recipients: 0
+/// - withdraw token transfers: 1
+/// - withdraw fee recipients: up to 3
+/// - deposit/withdraw salt bytes: up to 512 for predictable execution
+///
+/// Requests outside those bounds fail with explicit contract errors instead of
+/// consuming unbounded Soroban resources.
 ///
 /// ## Escrow State Machine
 ///
@@ -808,6 +824,29 @@ impl RustAcademyContract {
     /// means no features are paused.
     pub fn get_pause_flags(env: Env) -> u64 {
         metadata::pause_flags(&env)
+    }
+
+    /// Return the supported escrow operation limits and published budget envelopes.
+    pub fn get_escrow_operation_limits(_env: Env) -> EscrowOperationLimits {
+        escrow::operation_limits()
+    }
+
+    /// Estimate the bounded resource envelope for a deposit-shaped payload.
+    pub fn estimate_deposit_resources(
+        _env: Env,
+        salt_bytes: u32,
+        arbiter_count: u32,
+    ) -> Result<EscrowOperationEstimate, RustAcademyError> {
+        escrow::estimate_deposit_resources_view(salt_bytes, arbiter_count)
+    }
+
+    /// Estimate the bounded resource envelope for a withdraw-shaped payload.
+    pub fn estimate_withdraw_resources(
+        env: Env,
+        token: Address,
+        salt_bytes: u32,
+    ) -> Result<EscrowOperationEstimate, RustAcademyError> {
+        escrow::estimate_withdraw_resources_view(&env, token, salt_bytes)
     }
 
     /// Run any pending data migrations for the current contract code (**Admin only**).

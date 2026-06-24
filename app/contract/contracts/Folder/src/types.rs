@@ -292,6 +292,49 @@ pub struct OracleFeeConfig {
     pub stale_threshold_secs: u64,
 }
 
+/// Supported escrow operation bounds and published worst-case budget envelopes.
+///
+/// These limits are part of the public contract surface so integrators can
+/// preflight deposits and withdrawals before submitting transactions.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EscrowOperationLimits {
+    /// Maximum salt bytes accepted for resource-bounded deposit and withdraw flows.
+    pub max_salt_bytes: u32,
+    /// Maximum token transfer paths supported by a deposit call.
+    pub deposit_max_token_count: u32,
+    /// Maximum arbiters supported by the deposit family (`deposit_with_arbiters`).
+    pub deposit_max_arbiter_count: u32,
+    /// Maximum fee recipients touched by deposit paths.
+    pub deposit_max_fee_recips: u32,
+    /// Published worst-case CPU budget envelope for supported deposit payloads.
+    pub deposit_max_cpu_instructions: u64,
+    /// Published worst-case memory budget envelope for supported deposit payloads.
+    pub deposit_max_memory_bytes: u64,
+    /// Maximum token transfer paths supported by a withdraw call.
+    pub withdraw_max_token_count: u32,
+    /// Maximum arbiters consulted by the standard withdraw path.
+    pub withdraw_max_arbiter_count: u32,
+    /// Maximum fee recipients touched by a withdraw call.
+    pub withdraw_max_fee_recips: u32,
+    /// Published worst-case CPU budget envelope for supported withdraw payloads.
+    pub withdraw_max_cpu_instructions: u64,
+    /// Published worst-case memory budget envelope for supported withdraw payloads.
+    pub withdraw_max_memory_bytes: u64,
+}
+
+/// Resource estimate for a concrete escrow operation shape.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EscrowOperationEstimate {
+    pub token_count: u32,
+    pub arbiter_count: u32,
+    pub fee_recipient_count: u32,
+    pub salt_bytes: u32,
+    pub estimated_cpu_instructions: u64,
+    pub estimated_memory_bytes: u64,
+}
+
 /// Deployment metadata returned by [`crate:: RustAcademyContract::get_deployment_metadata`].
 ///
 /// Clients and indexers can call this view to validate compatibility without

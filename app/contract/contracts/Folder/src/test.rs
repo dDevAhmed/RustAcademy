@@ -762,9 +762,112 @@ fn test_canonical_error_code_ranges() {
     assert_eq!( RustAcademyError::EscrowExpired as u32, 307);
     assert_eq!( RustAcademyError::EscrowNotExpired as u32, 308);
     assert_eq!( RustAcademyError::InvalidOwner as u32, 309);
+    assert_eq!( RustAcademyError::PayloadTooLarge as u32, 329);
+    assert_eq!( RustAcademyError::TooManyFeeRecipients as u32, 330);
+    assert_eq!( RustAcademyError::TooManyTokens as u32, 331);
 
     // Internal/unexpected conditions (900-999)
     assert_eq!( RustAcademyError::InternalError as u32, 900);
+}
+
+#[test]
+fn test_get_escrow_operation_limits_reports_supported_bounds() {
+    let (env, client) = setup();
+    let limits = client.get_escrow_operation_limits();
+
+    assert_eq!(limits.max_salt_bytes, 512);
+    assert_eq!(limits.deposit_max_token_count, 1);
+    assert_eq!(limits.deposit_max_arbiter_count, 10);
+    assert_eq!(limits.deposit_max_fee_recips, 0);
+    assert_eq!(limits.withdraw_max_token_count, 1);
+    assert_eq!(limits.withdraw_max_arbiter_count, 0);
+    assert_eq!(limits.withdraw_max_fee_recips, 3);
+    assert!(limits.deposit_max_cpu_instructions >= 465_139);
+    assert!(limits.withdraw_max_cpu_instructions >= 452_582);
+
+    let token = create_test_token(&env);
+    let deposit_estimate = client
+        .try_estimate_deposit_resources(&512, &10)
+        .unwrap()
+        .unwrap();
+    assert_eq!(deposit_estimate.token_count, 1);
+    assert_eq!(deposit_estimate.arbiter_count, 10);
+    assert_eq!(deposit_estimate.fee_recipient_count, 0);
+
+    let withdraw_estimate = client
+        .try_estimate_withdraw_resources(&token, &512)
+        .unwrap()
+        .unwrap();
+    assert_eq!(withdraw_estimate.token_count, 1);
+    assert_eq!(withdraw_estimate.arbiter_count, 0);
+    assert_eq!(withdraw_estimate.salt_bytes, 512);
+}
+
+#[test]
+fn test_deposit_rejects_large_but_otherwise_valid_salt_payloads() {
+    let (env, client) = setup();
+    let token = create_test_token(&env);
+    let owner = Address::generate(&env);
+    let token_client = token::StellarAssetClient::new(&env, &token);
+    token_client.mint(&owner, &2_000);
+
+    let salt = Bytes::from_array(&env, &[7u8; 513]);
+    let result = client.try_deposit(&token, &1_000i128, &owner, &salt, &0u64, &None);
+    assert_contract_error(result, RustAcademyError::PayloadTooLarge);
+}
+
+#[test]
+fn test_withdraw_rejects_large_but_otherwise_valid_salt_payloads() {
+    let (env, client) = setup();
+    let token = create_test_token(&env);
+    let owner = Address::generate(&env);
+    let amount = 1_000i128;
+    let salt = Bytes::from_array(&env, &[9u8; 513]);
+    let commitment = client.create_amount_commitment(&owner, &amount, &salt);
+
+    setup_escrow(
+        &env,
+        &client.address,
+        &token,
+        amount,
+        commitment.clone(),
+        0,
+    );
+
+    let token_client = token::StellarAssetClient::new(&env, &token);
+    token_client.mint(&client.address, &amount);
+
+    let result = client.try_withdraw(&token, &amount, &commitment, &owner, &salt);
+    assert_contract_error(result, RustAcademyError::PayloadTooLarge);
+}
+
+#[test]
+fn test_budget_envelopes_cover_supported_deposit_and_withdraw_paths() {
+    let (env, client) = setup();
+    let token = create_test_token(&env);
+    let owner = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let collector = Address::generate(&env);
+    let amount = 1_000_000i128;
+    let salt = Bytes::from_slice(&env, b"budget-envelope-salt");
+    let limits = client.get_escrow_operation_limits();
+
+    client.initialize(&admin);
+    client.set_platform_wallet(&admin, &collector);
+    client.rotate_fee_collector(&admin, &collector);
+
+    let token_client = token::StellarAssetClient::new(&env, &token);
+    token_client.mint(&owner, &(amount * 2));
+
+    env.cost_estimate().budget().reset_default();
+    let commitment = client.deposit(&token, &amount, &owner, &salt, &0u64, &None);
+    assert!(env.cost_estimate().budget().cpu_instruction_cost() <= limits.deposit_max_cpu_instructions);
+    assert!(env.cost_estimate().budget().memory_bytes_cost() <= limits.deposit_max_memory_bytes);
+
+    env.cost_estimate().budget().reset_default();
+    client.withdraw(&token, &amount, &commitment, &owner, &salt);
+    assert!(env.cost_estimate().budget().cpu_instruction_cost() <= limits.withdraw_max_cpu_instructions);
+    assert!(env.cost_estimate().budget().memory_bytes_cost() <= limits.withdraw_max_memory_bytes);
 }
 
 /// Regression suite: deposit with commitment — create escrow (golden path).
@@ -3666,6 +3769,25 @@ fn test_deposit_with_arbiters_creates_escrow_and_is_disputable() {
 }
 
 #[test]
+fn test_deposit_with_arbiters_accepts_supported_upper_bound() {
+    let (env, client) = setup();
+    let token = create_test_token(&env);
+    let owner = Address::generate(&env);
+    let token_client = token::StellarAssetClient::new(&env, &token);
+    token_client.mint(&owner, &5_000);
+    let salt = Bytes::from_slice(&env, b"max-arbiters-supported");
+
+    let mut arbiters = Vec::new(&env);
+    for _ in 0..10 {
+        arbiters.push_back(Address::generate(&env));
+    }
+
+    let commitment =
+        client.deposit_with_arbiters(&token, &1_000i128, &owner, &salt, &0u64, &arbiters, &10);
+    assert_eq!(client.get_commitment_state(&commitment), Some(EscrowStatus::Pending));
+}
+
+#[test]
 fn test_deposit_with_arbiters_rejects_zero_threshold() {
     let (env, client) = setup();
     let token = create_test_token(&env);
@@ -3721,6 +3843,25 @@ fn test_deposit_with_arbiters_rejects_duplicate_arbiters() {
 
     let result = client.try_deposit_with_arbiters(&token, &amount, &owner, &salt, &0, &arbiters, &1);
     assert_eq!(result.unwrap_err().unwrap(), crate::errors:: RustAcademyError::DuplicateArbiter);
+}
+
+#[test]
+fn test_deposit_with_arbiters_rejects_above_supported_upper_bound() {
+    let (env, client) = setup();
+    let token = create_test_token(&env);
+    let owner = Address::generate(&env);
+    let token_client = token::StellarAssetClient::new(&env, &token);
+    token_client.mint(&owner, &5_000);
+    let salt = Bytes::from_slice(&env, b"too-many-arbiters");
+
+    let mut arbiters = Vec::new(&env);
+    for _ in 0..11 {
+        arbiters.push_back(Address::generate(&env));
+    }
+
+    let result =
+        client.try_deposit_with_arbiters(&token, &1_000i128, &owner, &salt, &0u64, &arbiters, &11);
+    assert_contract_error(result, RustAcademyError::TooManyArbiters);
 }
 
 #[test]
