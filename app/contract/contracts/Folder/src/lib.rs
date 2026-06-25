@@ -1250,6 +1250,8 @@ impl RustAcademyContract {
     ///
     /// # Errors
     /// * `Unauthorized` - Caller is not the admin, or admin not set
+    /// * `UpgradeNotInProgress` - no upgrade is currently in progress
+    /// * `UpgradeWindowNotActive` - upgrade window is not currently active
     ///
     /// # Security
     /// Updates the contract's executable code. Call [`migrate`]( RustAcademyContract::migrate)
@@ -1306,8 +1308,8 @@ impl RustAcademyContract {
     /// * `new_wasm_hash` - The target WASM hash
     ///
     /// # Errors
-    /// * `InvalidAmount` - (repurposed) upgrade window not active
-    /// * `ContractPaused` - (repurposed) upgrade already in progress
+    /// * `UpgradeWindowNotActive` - upgrade window is not currently active
+    /// * `UpgradeAlreadyInProgress` - an upgrade is already in progress
     pub fn start_upgrade(
         env: Env,
         caller: Address,
@@ -1336,7 +1338,8 @@ impl RustAcademyContract {
     /// The actual new contract version
     ///
     /// # Errors
-    /// * `InternalError` - no upgrade in progress, or post-upgrade invariants violated
+    /// * `UpgradeNotInProgress` - no upgrade is currently in progress
+    /// * `InternalError` - post-upgrade invariants violated
     pub fn complete_upgrade(
         env: Env,
         caller: Address,

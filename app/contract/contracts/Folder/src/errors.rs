@@ -97,4 +97,11 @@ pub enum RustAcademyError {
     NonceAlreadyUsed = 500,
     /// The signature's valid_until timestamp has passed; signature expired.
     SignatureExpired = 501,
+    // Upgrade gating (502-504)
+    /// The upgrade window is not currently active; start_upgrade is blocked.
+    UpgradeWindowNotActive = 502,
+    /// An upgrade is already in progress; start_upgrade cannot be called again.
+    UpgradeAlreadyInProgress = 503,
+    /// No upgrade is currently in progress; upgrade or complete_upgrade cannot proceed.
+    UpgradeNotInProgress = 504,
 }

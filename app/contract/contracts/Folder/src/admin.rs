@@ -354,11 +354,11 @@ pub fn start_upgrade(
 
     // Check upgrade window is active (Issue #432 AC1)
     if !storage::is_upgrade_window_active(env) {
-        return Err(RustAcademyError::InvalidAmount); // Repurpose for "upgrade window not active"
+        return Err(RustAcademyError::UpgradeWindowNotActive);
     }
 
     if storage::is_upgrade_in_progress(env) {
-        return Err(RustAcademyError::ContractPaused); // Reuse for "upgrade in progress"
+        return Err(RustAcademyError::UpgradeAlreadyInProgress);
     }
 
     let old_version = get_version(env);
@@ -398,11 +398,11 @@ pub fn upgrade(
     require_admin(env, caller)?;
 
     if !storage::is_upgrade_in_progress(env) {
-        return Err(RustAcademyError::InternalError);
+        return Err(RustAcademyError::UpgradeNotInProgress);
     }
 
     if !storage::is_upgrade_window_active(env) {
-        return Err(RustAcademyError::InvalidAmount);
+        return Err(RustAcademyError::UpgradeWindowNotActive);
     }
 
     let pending_hash =
@@ -448,7 +448,7 @@ pub fn complete_upgrade(
     new_version: u32,
 ) -> Result<u32, RustAcademyError> {
     if !storage::is_upgrade_in_progress(env) {
-        return Err(RustAcademyError::InternalError); // Not in upgrade state
+        return Err(RustAcademyError::UpgradeNotInProgress);
     }
 
     // Verify version and hash (Issue #432 AC2)
