@@ -11,6 +11,7 @@ import { TutorProfileModule } from './users/tutor-profile.module';
 import { UserProfileModule } from './users/user-profile.module';
 import { AiModule } from './ai/ai.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
     ChallengesModule,
     AiModule,
     LeaderboardModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [
