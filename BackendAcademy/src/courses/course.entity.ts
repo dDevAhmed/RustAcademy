@@ -8,6 +8,9 @@ export class CourseEntity {
   order: number;
   learningPathId: string;
   duration: number;
+  category: string;
+  categories: string[];
+  tags: string[];
   prerequisites: string[];
   skills: string[];
   xpReward: number;
@@ -20,6 +23,9 @@ export class CourseEntity {
     this.createdAt = this.createdAt || new Date();
     this.updatedAt = this.updatedAt || new Date();
     this.isActive = this.isActive ?? true;
+    this.category = this.category || this.categories?.[0] || 'general';
+    this.categories = this.categories || [this.category];
+    this.tags = this.tags || [];
     this.prerequisites = this.prerequisites || [];
     this.skills = this.skills || [];
   }

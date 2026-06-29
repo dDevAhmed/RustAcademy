@@ -34,6 +34,12 @@ export class CourseService {
     const course = this.courses.get(id);
     if (!course) return null;
     Object.assign(course, dto, { updatedAt: new Date() });
+    if (dto.category && !dto.categories) {
+      course.categories = [dto.category];
+    }
+    if (dto.categories?.length && !dto.category) {
+      course.category = dto.categories[0];
+    }
     return course;
   }
 

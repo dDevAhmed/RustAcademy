@@ -16,6 +16,8 @@ import { SocialModule } from './social/social.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
 import { LessonModule } from './lessons/lesson.module';
 import { TaskModule } from './tasks/task.module';
+import { CourseModule } from './courses';
+import { SearchModule } from './search';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { TaskModule } from './tasks/task.module';
     OnboardingModule,
     LessonModule,
     TaskModule,
+    CourseModule,
+    SearchModule,
   ],
   controllers: [AppController],
   providers: [
