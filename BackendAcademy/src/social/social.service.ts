@@ -33,14 +33,33 @@ export class SocialService {
   }
 
   getFeed(dto: GetSocialFeedDto): SocialFeedResponse {
-    const { page = 1, limit = 10, status } = dto;
-    const normalizedStatus = status ? this.normalizeStatus(status) : undefined;
+    const { page = 1, limit = 10, status, search, userId, tag } = dto;
+    const normalizedStatus = status
+      ? this.normalizeStatus(status)
+      : 'approved';
 
-    let filteredPosts = Array.from(this.posts.values());
+    let filteredPosts = Array.from(this.posts.values()).filter(
+      (post) => post.moderationStatus === normalizedStatus,
+    );
 
-    if (normalizedStatus) {
+    if (userId) {
+      const normalizedUserId = this.normalizeUserId(userId);
       filteredPosts = filteredPosts.filter(
-        (post) => post.moderationStatus === normalizedStatus,
+        (post) => post.userId === normalizedUserId,
+      );
+    }
+
+    if (search) {
+      const normalizedSearch = this.normalizeSearch(search);
+      filteredPosts = filteredPosts.filter((post) =>
+        post.content.toLowerCase().includes(normalizedSearch),
+      );
+    }
+
+    if (tag) {
+      const normalizedTag = this.normalizeTag(tag);
+      filteredPosts = filteredPosts.filter((post) =>
+        post.content.toLowerCase().includes(`#${normalizedTag}`),
       );
     }
 
@@ -195,5 +214,14 @@ export class SocialService {
       });
     }
     return status as ModerationStatus;
+  }
+
+  private normalizeSearch(search: string): string {
+    return search.trim().toLowerCase();
+  }
+
+  private normalizeTag(tag: string): string {
+    const normalized = tag.trim().toLowerCase();
+    return normalized.startsWith('#') ? normalized.slice(1) : normalized;
   }
 }

@@ -34,6 +34,11 @@ export class SocialController {
     return this.socialService.getFeed(dto);
   }
 
+  @Get('discovery')
+  getDiscovery(@Query() dto: GetSocialFeedDto): SocialFeedResponse {
+    return this.socialService.getFeed(dto);
+  }
+
   @Get('posts/:postId')
   getPostById(@Param('postId') postId: string): SocialPost {
     return this.socialService.getPostById(postId);
