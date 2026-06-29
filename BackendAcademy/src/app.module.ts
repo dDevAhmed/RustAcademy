@@ -13,6 +13,9 @@ import { AiModule } from './ai/ai.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { SocialModule } from './social/social.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
+import { LessonModule } from './lessons/lesson.module';
+import { TaskModule } from './tasks/task.module';
 
 @Module({
   imports: [
@@ -32,6 +35,9 @@ import { SocialModule } from './social/social.module';
     LeaderboardModule,
     AnalyticsModule,
     SocialModule,
+    OnboardingModule,
+    LessonModule,
+    TaskModule,
   ],
   controllers: [AppController],
   providers: [
